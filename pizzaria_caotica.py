@@ -19,47 +19,99 @@ função eh_primo da Unidade 02
 import threading
 import queue
 import time
+from math import sqrt
+import random
 
 tamanho_fila = 50
 semaphoro = threading.Semaphore(3)
 
 pedidos_pendentes = queue.Queue()
 pizzas_feitas = queue.Queue()
+pedidos_completos_bool = threading.Event()
+entregas_concluidas_bool = threading.Event()
+
+def eh_primo(x):
+    if x < 2:
+        return False
+    if x == 2:
+        return True
+    if x % 2 == 0:
+        return False
+        
+    limit = int(sqrt(x)) + 1
+    for i in range(3, limit, 2):
+        if x % i == 0:
+            return False
+    return True
 
 for i in range (1, tamanho_fila + 1):
-    pedidos_pendentes.put(i)
+    pedidos_pendentes.put(pow(10, 13) + random.randint(0, pow(10, 12)))
 
 def chef(pedidos_pendentes, n_thread):
     contador = 0
-    while pedidos_pendentes:
-        semaphoro.acquire()
-        pizza = pedidos_pendentes.get()
-        contador += 1
-        print(f'O chef {n_thread} está fazendo a sua {contador}° pizza, pizza de número {pizza}')
-        time.sleep(5)
-        print(f'O chef {n_thread} finalizou a pizza de número {pizza}')
-        pizzas_feitas.put(pizza)
-        semaphoro.release()
+    while True:
+        if not pedidos_pendentes.empty():
+            try:
+                pizza = pedidos_pendentes.get(block=False)
+            except:
+                break
+
+            semaphoro.acquire()
+            contador += 1
+            print(f'O chef {n_thread} está fazendo a sua {contador}ª pizza, pizza de número {pizza}. É primo? {eh_primo(pizza)}')
+            time.sleep(1)
+            print(f'O chef {n_thread} finalizou a pizza de número {pizza}')
+            pizzas_feitas.put(pizza)
+            semaphoro.release()
+            time.sleep(1)
+
+        if pedidos_completos_bool.is_set():
+            break
+
+        if pedidos_pendentes.empty() and (not pedidos_completos_bool.is_set()):
+            pedidos_completos_bool.set()
+            pedidos_pendentes.task_done()
+            break
+
+    
 
 
-def entregador(pedidos_pendentes, n_thread):
-    while pedidos_pendentes or pizzas_feitas:
-        pizza = pizzas_feitas.get()
-        if pizza:
+def entregador(n_thread):
+    while True:
+        try:
+            pizza = pizzas_feitas.get(block=False)
             print(f'O entregador {n_thread} está fazendo a entrega do pedido {pizza}')
-            time.sleep(10)
+            time.sleep(1)
             print(f'O entregador {n_thread} concluiu a entrega do pedido {pizza}')
+        except queue.Empty:
+            continue
+
+    
+
+        if entregas_concluidas_bool.is_set():
+            break
+
+        if (pedidos_completos_bool.is_set()) and (pizzas_feitas.empty()) and (not entregas_concluidas_bool.is_set()):
+            entregas_concluidas_bool.set()
+            pizzas_feitas.task_done()
+            break
+
+            
+        
+        
 
 
-funcionario = []
+if __name__ == '__main__':
 
-for n_thread in range (1, 9):
-    p = threading.Thread(target=chef,  args=(pedidos_pendentes, n_thread))
-    e = threading.Thread(target=entregador, args=(pedidos_pendentes, n_thread))
-    funcionario.append(p)
-    funcionario.append(e)
-    p.start()
-    e.start()
+    funcionario = []
 
-for j in funcionario:
-    j.join()
+    for n_thread in range (1, 9):
+        p = threading.Thread(target=chef,  args=(pedidos_pendentes, n_thread))
+        e = threading.Thread(target=entregador, args=(n_thread,))
+        funcionario.append(p)
+        funcionario.append(e)
+        p.start()
+        e.start()
+
+    for j in funcionario:
+        j.join()
